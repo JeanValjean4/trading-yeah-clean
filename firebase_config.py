@@ -1,7 +1,12 @@
-# firebase_config.py - VERSIÓN SEGURA PARA PRODUCCIÓN
+# firebase_config.py - VERSIÓN SEGURA Y REVISADA PARA PRODUCCIÓN
+
 import streamlit as st
 import firebase_admin
-from firebase_admin import credentials, firestore, auth
+from firebase_admin import credentials, firestore, auth # AÑADIDO: Importamos firestore aquí
+
+# Definir variables inicialmente como None o importadas globalmente
+db = None
+auth_app = None # Cambiamos el nombre de la variable local para evitar conflictos
 
 # Inicializar Firebase solo una vez
 if not firebase_admin._apps:
@@ -20,18 +25,19 @@ if not firebase_admin._apps:
                 "auth_provider_x509_cert_url": st.secrets["FIREBASE_AUTH_PROVIDER_CERT_URL"],
             }
             cred = credentials.Certificate(firebase_creds)
-            firebase_admin.initialize_app(cred)
+            firebase_app = firebase_admin.initialize_app(cred)
+            
+            # Obtener instancias SÓLO si la app se inicializa
+            db = firestore.client(firebase_app)
+            auth_app = auth.get_auth(firebase_app)
         else:
             # Para desarrollo local sin credenciales (solo UI)
             st.warning("⚠️ Firebase no configurado - Modo demo activado")
     except Exception as e:
         st.error(f"❌ Error configurando Firebase: {str(e)}")
 
-# Obtener instancias de forma segura
-try:
-    db = firestore.client()
-    auth = auth
-except:
-    # Fallback seguro si Firebase no está configurado
-    db = None
-    auth = None
+# Exportar las instancias
+# NOTA: Exportamos firestore para que streamlit_app.py pueda importarlo (si es necesario)
+firestore = firestore
+db = db
+auth = auth_app
