@@ -1,20 +1,11 @@
-# streamlite_app.py - VERSIÓN CON ESTILOS CORREGIDOS
+# streamlit_app.py - VERSIÓN CORREGIDA Y LIMPIA
 import streamlit as st
-from firebase_config import db, auth, firestore  # Añadí firestore aquí
-from comunidades import mostrar_mis_comunidades
-from estrategia_maestra import mostrar_estrategia_maestra
-from market_data import mostrar_datos_mercado
-from planificador_trading import mostrar_planificador_trading
-from analisis_mercado import mostrar_analisis_mercado
+from firebase_config import db, auth_instance as auth
+from dashboard import mostrar_dashboard_personalizado
 from journaling import mostrar_journaling_inteligente
 from chatbot import mostrar_chatbot_trading
-from educacion import mostrar_educacion
-from formulario_mentores import formulario_mentores
-import registrar_mentor
-from dashboard import mostrar_dashboard_personalizado
-from dotenv import load_dotenv
-load_dotenv()  # Carga variables del archivo .env
-
+from estrategia_maestra import mostrar_estrategia_maestra
+from analisis_mercado import mostrar_proximamente
 
 # ========== CONFIGURACIÓN INICIAL ==========
 COLOR_PRIMARY = "#4A5A3D"
@@ -142,14 +133,26 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-
-# ========== AUTH ORIGINAL (FUNCIONAL) ==========
+# ========== AUTH MEJORADA CON MANEJO DE ERRORES ==========
 def get_user_role(uid):
-    doc = db.collection('user_roles').document(uid).get()
-    return doc.to_dict().get('role', 'mentee') if doc.exists else 'mentee'
+    """Obtener rol del usuario con manejo de errores"""
+    try:
+        if db:
+            doc = db.collection('user_roles').document(uid).get()
+            return doc.to_dict().get('role', 'mentee') if doc.exists else 'mentee'
+        return 'mentee'
+    except Exception as e:
+        st.error(f"Error obteniendo rol: {str(e)}")
+        return 'mentee'
 
 def auth_ui():
+    """Interfaz de autenticación con manejo de modos"""
     st.title("🔐 Trading Yeah")
+    
+    # Mostrar modo actual
+    if db is None:
+        st.warning("🔧 Modo Demo - Firebase no configurado")
+    
     tab1, tab2 = st.tabs(["Ingresar", "Registrarse"])
     
     with tab1:
@@ -158,13 +161,23 @@ def auth_ui():
             password = st.text_input("🔒 Contraseña", type="password")
             if st.form_submit_button("Ingresar"):
                 try:
-                    user = auth.get_user_by_email(email)
-                    st.session_state.user = {
-                        'uid': user.uid,
-                        'email': email,
-                        'role': get_user_role(user.uid)
-                    }
-                    st.rerun()
+                    if auth:
+                        user = auth.get_user_by_email(email)
+                        st.session_state.user = {
+                            'uid': user.uid,
+                            'email': email,
+                            'role': get_user_role(user.uid)
+                        }
+                        st.rerun()
+                    else:
+                        # Modo demo - simular login
+                        st.session_state.user = {
+                            'uid': 'demo-user-123',
+                            'email': email,
+                            'role': 'mentee'
+                        }
+                        st.success("✅ Modo demo - Sesión iniciada")
+                        st.rerun()
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
     
@@ -175,27 +188,30 @@ def auth_ui():
             role = st.selectbox("👤 Rol", ["Mentorado", "Mentor"])
             if st.form_submit_button("Crear cuenta"):
                 try:
-                    user = auth.create_user(email=email, password=password)
-                    db.collection('user_roles').document(user.uid).set({
-                        'role': 'mentor' if role == "Mentor" else 'mentee'
-                    })
-                    st.success("¡Cuenta creada! Inicia sesión.")
+                    if auth and db:
+                        user = auth.create_user(email=email, password=password)
+                        db.collection('user_roles').document(user.uid).set({
+                            'role': 'mentor' if role == "Mentor" else 'mentee'
+                        })
+                        st.success("¡Cuenta creada! Inicia sesión.")
+                    else:
+                        st.info("🔧 Modo demo - Registro simulado")
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
 
-
-
-
-# ========== BARRA LATERAL ORIGINAL ==========
-# ========== BARRA LATERAL LIMPIA PARA MVP ==========
+# ========== BARRA LATERAL MEJORADA ==========
 def sidebar():
-    st.sidebar.title("Navegación")
+    st.sidebar.title("🚀 Trading Yeah")
+    
     if 'user' not in st.session_state:
         auth_ui()
         st.stop()
         
     st.sidebar.write(f"👤 {st.session_state.user['email']}")
     st.sidebar.write(f"🎖️ Rol: {st.session_state.user['role'].capitalize()}")
+    
+    if db is None:
+        st.sidebar.warning("🔧 Modo Demo Activado")
 
     # SOLO FUNCIONALIDADES MVP
     opciones = [
@@ -208,8 +224,7 @@ def sidebar():
     
     return st.sidebar.radio("Menú", opciones)
 
-
-# ========== MAIN SOLO MVP + HYPE ==========
+# ========== MAIN CORREGIDO ==========
 def main():
     opcion = sidebar()
     
@@ -220,11 +235,9 @@ def main():
     elif opcion == "Apoyo Psicológico":
         mostrar_chatbot_trading()
     elif opcion == "Planificador de Trading":
-        mostrar_planificador_trading()
+        mostrar_estrategia_maestra()
     elif opcion == "🚀 Próximamente":
-        from analisis_mercado import mostrar_proximamente
         mostrar_proximamente()
-
 
 if __name__ == "__main__":
     main()
