@@ -1,6 +1,12 @@
-# streamlit_app.py - VERSIÓN CORREGIDA Y LIMPIA
+# streamlit_app.py - SOLO actualiza estas primeras líneas
 import streamlit as st
-from firebase_config import db, auth_instance as auth
+try:
+    from firebase_config import db, auth_instance as auth
+except:
+    # Fallback si hay error en la importación
+    db = None
+    auth = None
+
 from dashboard import mostrar_dashboard_personalizado
 from journaling import mostrar_journaling_inteligente
 from chatbot import mostrar_chatbot_trading
