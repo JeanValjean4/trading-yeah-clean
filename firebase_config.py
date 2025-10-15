@@ -49,4 +49,8 @@ if firebase_initialized:
         auth_instance = None
 else:
     db = None
+<<<<<<< HEAD
     auth_instance = None
+=======
+    auth_instance = None
+>>>>>>> c9cd1037d16daa551adcdb469c53400330b52390
