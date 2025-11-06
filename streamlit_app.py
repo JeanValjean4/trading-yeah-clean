@@ -1,17 +1,26 @@
-# streamlit_app.py - SOLO actualiza estas primeras líneas
+# streamlit_app.py - VERSIÓN COMPLETA CON FEEDBACK + IDIOMAS
 import streamlit as st
+from datetime import datetime
+
+# Importaciones con manejo de errores
 try:
     from firebase_config import db, auth_instance as auth
-except:
-    # Fallback si hay error en la importación
+    from firebase_admin import firestore
+except Exception as e:
     db = None
     auth = None
+    firestore = None
+    print(f"Firebase import error: {e}")
 
-from dashboard import mostrar_dashboard_personalizado
-from journaling import mostrar_journaling_inteligente
-from chatbot import mostrar_chatbot_trading
-from estrategia_maestra import mostrar_estrategia_maestra
-from analisis_mercado import mostrar_proximamente
+try:
+    from dashboard import mostrar_dashboard_personalizado
+    from journaling import mostrar_journaling_inteligente
+    from chatbot import mostrar_chatbot_trading
+    from estrategia_maestra import mostrar_estrategia_maestra
+    from analisis_mercado import mostrar_proximamente
+    from translations import get_translation
+except ImportError as e:
+    st.error(f"Error importing modules: {e}")
 
 # ========== CONFIGURACIÓN INICIAL ==========
 COLOR_PRIMARY = "#4A5A3D"
@@ -139,6 +148,83 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
+# ========== SISTEMA DE FEEDBACK MEJORADO ==========
+def guardar_feedback(texto, correo, pagina, idioma):
+    """Guarda feedback en Firebase y trigger de email"""
+    if texto.strip():
+        try:
+            if db:
+                feedback_data = {
+                    "texto": texto,
+                    "correo": correo,
+                    "pagina": pagina,
+                    "idioma": idioma,
+                    "fecha": datetime.now().isoformat(),
+                    "user_agent": "Streamlit App",
+                }
+                
+                # Guardar en Firebase
+                db.collection("feedback").add(feedback_data)
+                
+                # Trigger para email
+                trigger_email_notification(feedback_data)
+                
+                # Mensaje de éxito
+                if idioma == "en":
+                    st.success("✅ Thank you! Your feedback is gold 🏆")
+                else:
+                    st.success("✅ ¡Gracias! Tu opinión vale oro 🏆")
+                    
+                # Limpiar el campo
+                if 'feedback_input' in st.session_state:
+                    st.session_state.feedback_input = ""
+            else:
+                if idioma == "en":
+                    st.info("📝 Feedback saved locally (Firebase not connected)")
+                else:
+                    st.info("📝 Feedback guardado localmente (Firebase no conectado)")
+                
+        except Exception as e:
+            st.error(f"❌ Error saving feedback: {str(e)}")
+    else:
+        if idioma == "en":
+            st.warning("Please write something before sending")
+        else:
+            st.warning("Por favor, escribe algo antes de enviar")
+
+def trigger_email_notification(feedback_data):
+    """Placeholder para integración con EmailJS/Zapier"""
+    # Por ahora solo log
+    print(f"📧 New feedback from {feedback_data['correo']} on {feedback_data['pagina']}")
+
+def seccion_feedback():
+    """Sistema de feedback con tracking de página"""
+    st.sidebar.markdown("---")
+    with st.sidebar.expander("💬 Send Feedback / Enviar Comentarios"):
+        
+        # Detectar página actual
+        pagina_actual = st.session_state.get('opcion', 'Unknown')
+        
+        feedback_text = st.text_area(
+            "Your feedback or suggestion / Tu opinión o sugerencia:",
+            placeholder="What do you like? What can be improved? / ¿Qué te gusta? ¿Qué podemos mejorar?",
+            key="feedback_input"
+        )
+        
+        user_email = st.text_input(
+            "Your email (optional) / Tu correo (opcional):",
+            value=st.session_state.user.get('email', '') if 'user' in st.session_state else "",
+            key="feedback_email"
+        )
+        
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("📤 Send Feedback", key="enviar_feedback_en"):
+                guardar_feedback(feedback_text, user_email, pagina_actual, "en")
+        with col2:
+            if st.button("📤 Enviar Comentario", key="enviar_feedback_es"):
+                guardar_feedback(feedback_text, user_email, pagina_actual, "es")
+
 # ========== AUTH MEJORADA CON MANEJO DE ERRORES ==========
 def get_user_role(uid):
     """Obtener rol del usuario con manejo de errores"""
@@ -152,20 +238,21 @@ def get_user_role(uid):
         return 'mentee'
 
 def auth_ui():
-    """Interfaz de autenticación con manejo de modos"""
-    st.title("🔐 Trading Yeah")
+    """Interfaz de autenticación con soporte para idiomas"""
+    lang = st.session_state.get("language", "en")
     
-    # Mostrar modo actual
+    st.title(get_translation(lang, "login_title"))
+
     if db is None:
-        st.warning("🔧 Modo Demo - Firebase no configurado")
+        st.warning(get_translation(lang, "demo_warning"))
     
-    tab1, tab2 = st.tabs(["Ingresar", "Registrarse"])
+    tab1, tab2 = st.tabs(["Login", "Register"] if lang == "en" else ["Ingresar", "Registrarse"])
     
     with tab1:
         with st.form("Login"):
-            email = st.text_input("📧 Correo")
-            password = st.text_input("🔒 Contraseña", type="password")
-            if st.form_submit_button("Ingresar"):
+            email = st.text_input(get_translation(lang, "login_email"))
+            password = st.text_input(get_translation(lang, "login_password"), type="password")
+            if st.form_submit_button(get_translation(lang, "login_button")):
                 try:
                     if auth:
                         user = auth.get_user_by_email(email)
@@ -176,73 +263,185 @@ def auth_ui():
                         }
                         st.rerun()
                     else:
-                        # Modo demo - simular login
                         st.session_state.user = {
-                            'uid': 'demo-user-123',
+                            'uid': f"demo-user-{hash(email)}",
                             'email': email,
                             'role': 'mentee'
                         }
-                        st.success("✅ Modo demo - Sesión iniciada")
+                        st.success(get_translation(lang, "demo_login_success"))
                         st.rerun()
                 except Exception as e:
-                    st.error(f"Error: {str(e)}")
+                    if "USER_NOT_FOUND" in str(e):
+                        if lang == "en":
+                            st.error("User not found. Please register first.")
+                        else:
+                            st.error("Usuario no encontrado. Por favor regístrate primero.")
+                    else:
+                        st.error(f"Error: {str(e)}")
     
     with tab2:
         with st.form("Registro"):
-            email = st.text_input("📧 Correo (registro)")
-            password = st.text_input("🔒 Nueva contraseña", type="password")
-            role = st.selectbox("👤 Rol", ["Mentorado", "Mentor"])
-            if st.form_submit_button("Crear cuenta"):
+            email = st.text_input(get_translation(lang, "login_email"))
+            password = st.text_input(get_translation(lang, "login_password"), type="password")
+            role_options = get_translation(lang, "roles")
+            role = st.selectbox(get_translation(lang, "role_select"), role_options)
+            if st.form_submit_button(get_translation(lang, "register_button")):
                 try:
                     if auth and db:
                         user = auth.create_user(email=email, password=password)
                         db.collection('user_roles').document(user.uid).set({
-                            'role': 'mentor' if role == "Mentor" else 'mentee'
+                            'role': 'mentor' if role == role_options[1] else 'mentee'
                         })
-                        st.success("¡Cuenta creada! Inicia sesión.")
+                        if lang == "en":
+                            st.success("Account created! Please login.")
+                        else:
+                            st.success("¡Cuenta creada! Inicia sesión.")
                     else:
-                        st.info("🔧 Modo demo - Registro simulado")
+                        if lang == "en":
+                            st.info("🔧 Demo mode - Registration simulated")
+                        else:
+                            st.info("🔧 Modo demo - Registro simulado")
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
 
 # ========== BARRA LATERAL MEJORADA ==========
 def sidebar():
+    # Selector de idioma (solo mostrar si no hay usuario)
+    if 'user' not in st.session_state:
+        st.sidebar.markdown("### 🌐 Language / Idioma")
+        lang = st.sidebar.radio("Choose your language / Elige tu idioma:", ["English", "Español"], horizontal=True)
+        st.session_state.language = "en" if lang == "English" else "es"
+    
     st.sidebar.title("🚀 Trading Yeah")
     
     if 'user' not in st.session_state:
         auth_ui()
         st.stop()
         
+    lang = st.session_state.get("language", "en")
+    
     st.sidebar.write(f"👤 {st.session_state.user['email']}")
-    st.sidebar.write(f"🎖️ Rol: {st.session_state.user['role'].capitalize()}")
+    st.sidebar.write(f"🎖️ {get_translation(lang, 'sidebar_role')}: {st.session_state.user['role'].capitalize()}")
     
     if db is None:
-        st.sidebar.warning("🔧 Modo Demo Activado")
+        st.sidebar.warning(get_translation(lang, "sidebar_demo"))
 
-    # SOLO FUNCIONALIDADES MVP
-    opciones = [
-        "Dashboard", 
-        "Journaling Inteligente",
-        "Apoyo Psicológico",
-        "Planificador de Trading",
-        "🚀 Próximamente"
-    ]
+    # Menú con traducciones
+    opciones = get_translation(lang, "menu_items")
     
-    return st.sidebar.radio("Menú", opciones)
+    # Guardar opción actual para tracking
+    opcion_seleccionada = st.sidebar.radio(get_translation(lang, "sidebar_menu"), opciones)
+    st.session_state.opcion = opcion_seleccionada
+    
+    # Agregar feedback
+    seccion_feedback()
+    
+    # Sección de onboarding/beta testing
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🧪 Beta Testing Guide" if lang == "en" else "🧪 Guía Beta"):
+        st.session_state.show_onboarding = True
+    
+    return opcion_seleccionada
+
+# ========== SECCIÓN ONBOARDING ==========
+def mostrar_guia_onboarding():
+    """Muestra la guía de onboarding para testers"""
+    lang = st.session_state.get("language", "en")
+    
+    if lang == "en":
+        st.title("🧪 Trading Yeah - Beta Testing Guide")
+        st.success("🚀 **Welcome to Trading Yeah Beta!**\n\nThank you for helping us improve. Your feedback is crucial to build the best trading platform possible.")
+        
+        with st.expander("🎯 What to Test", expanded=True):
+            st.markdown("""
+            **Please focus on:**
+            - 🧠 **Intelligent Journaling**: Does it help you analyze your trades better?
+            - 📊 **Dashboard**: Are the metrics useful and understandable?  
+            - 💬 **Psychological Support**: Are the AI responses helpful?
+            - 📝 **Trading Planner**: Is the planning process intuitive?
+            - 🎨 **UI/UX**: Is the interface easy to use?
+            """)
+        
+        with st.expander("📝 How to Give Feedback"):
+            st.markdown("""
+            **Be specific and constructive:**
+            - ❌ **Not helpful**: "I don't like it"
+            - ✅ **Helpful**: "The journaling form is confusing because [...]"
+            
+            **Use the feedback section in the sidebar** to report:
+            - Bugs or errors
+            - Confusing interfaces  
+            - Missing features
+            - Things you love! ❤️
+            """)
+            
+        st.info("💡 **Pro tip**: Use the platform as you would normally trade. The most valuable feedback comes from real usage!")
+    else:
+        st.title("🧪 Trading Yeah - Guía Beta")
+        st.success("🚀 **¡Bienvenido a Trading Yeah Beta!**\n\nGracias por ayudarnos a mejorar. Tu feedback es crucial para construir la mejor plataforma de trading posible.")
+        
+        with st.expander("🎯 Qué Probar", expanded=True):
+            st.markdown("""
+            **Por favor enfócate en:**
+            - 🧠 **Journaling Inteligente**: ¿Te ayuda a analizar mejor tus operaciones?
+            - 📊 **Dashboard**: ¿Son útiles y entendibles las métricas?  
+            - 💬 **Apoyo Psicológico**: ¿Son útiles las respuestas de IA?
+            - 📝 **Planificador de Trading**: ¿Es intuitivo el proceso de planificación?
+            - 🎨 **UI/UX**: ¿Es fácil de usar la interfaz?
+            """)
+        
+        with st.expander("📝 Cómo Dar Feedback"):
+            st.markdown("""
+            **Sé específico y constructivo:**
+            - ❌ **No útil**: "No me gusta"
+            - ✅ **Útil**: "El formulario de journaling es confuso porque [...]"
+            
+            **Usa la sección de feedback en la barra lateral** para reportar:
+            - Errores o bugs
+            - Interfaces confusas  
+            - Funcionalidades faltantes
+            - ¡Cosas que amas! ❤️
+            """)
+            
+        st.info("💡 **Consejo profesional**: Usa la plataforma como lo harías normalmente al tradear. ¡El feedback más valioso viene del uso real!")
 
 # ========== MAIN CORREGIDO ==========
 def main():
+    # Mostrar onboarding si se solicita
+    if st.session_state.get('show_onboarding'):
+        mostrar_guia_onboarding()
+        lang = st.session_state.get("language", "en")
+        if st.button("← Back to Platform" if lang == "en" else "← Volver a la Plataforma"):
+            st.session_state.show_onboarding = False
+            st.rerun()
+        return
+    
     opcion = sidebar()
     
-    if opcion == "Dashboard":
+    # Mapear opciones traducidas a las funciones originales
+    opciones_base = {
+        "Dashboard": "Dashboard",
+        "Intelligent Journaling": "Journaling Inteligente", 
+        "Psychological Support": "Apoyo Psicológico",
+        "Trading Planner": "Planificador de Trading",
+        "🚀 Coming Soon": "🚀 Próximamente",
+        "Journaling Inteligente": "Journaling Inteligente",
+        "Apoyo Psicológico": "Apoyo Psicológico",
+        "Planificador de Trading": "Planificador de Trading",
+        "🚀 Próximamente": "🚀 Próximamente"
+    }
+    
+    opcion_base = opciones_base.get(opcion, opcion)
+    
+    if opcion_base == "Dashboard":
         mostrar_dashboard_personalizado()
-    elif opcion == "Journaling Inteligente":
+    elif opcion_base == "Journaling Inteligente":
         mostrar_journaling_inteligente()
-    elif opcion == "Apoyo Psicológico":
+    elif opcion_base == "Apoyo Psicológico":
         mostrar_chatbot_trading()
-    elif opcion == "Planificador de Trading":
+    elif opcion_base == "Planificador de Trading":
         mostrar_estrategia_maestra()
-    elif opcion == "🚀 Próximamente":
+    elif opcion_base == "🚀 Próximamente":
         mostrar_proximamente()
 
 if __name__ == "__main__":

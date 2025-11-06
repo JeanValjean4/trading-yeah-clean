@@ -1,65 +1,35 @@
-# firebase_config.py - VERSIÓN ROBUSTA CON FALLBACK
+# firebase_config.py - VERSIÓN DEFINITIVA
 import streamlit as st
+
+# Valores por defecto
+db = None
+auth_instance = None
 
 try:
     import firebase_admin
     from firebase_admin import credentials, firestore, auth
     
-    # Inicializar Firebase de forma segura
-    def initialize_firebase():
-        if not firebase_admin._apps:
-            try:
-                # Verificar si tenemos las secrets necesarias
-                required_secrets = ['FIREBASE_PRIVATE_KEY', 'FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL']
-                
-                if all(secret in st.secrets for secret in required_secrets):
-                    firebase_creds = {
-                        "type": st.secrets.get("FIREBASE_TYPE", "service_account"),
-                        "project_id": st.secrets["FIREBASE_PROJECT_ID"],
-                        "private_key_id": st.secrets.get("FIREBASE_PRIVATE_KEY_ID", ""),
-                        "private_key": st.secrets["FIREBASE_PRIVATE_KEY"].replace('\\n', '\n'),
-                        "client_email": st.secrets["FIREBASE_CLIENT_EMAIL"],
-                        "client_id": st.secrets.get("FIREBASE_CLIENT_ID", ""),
-                        "auth_uri": st.secrets.get("FIREBASE_AUTH_URI", "https://accounts.google.com/o/oauth2/auth"),
-                        "token_uri": st.secrets.get("FIREBASE_TOKEN_URI", "https://oauth2.googleapis.com/token"),
-                        "auth_provider_x509_cert_url": st.secrets.get("FIREBASE_AUTH_PROVIDER_CERT_URL", "https://www.googleapis.com/oauth2/v1/certs"),
-                    }
-                    
-                    cred = credentials.Certificate(firebase_creds)
-                    firebase_admin.initialize_app(cred)
-                    return True
-                else:
-                    st.warning("⚠️ Firebase no configurado - Modo demo activado")
-                    return False
-                    
-            except Exception as e:
-                st.error(f"❌ Error configurando Firebase: {str(e)}")
-                return False
-        return True
-
-    # Inicializar Firebase
-    firebase_initialized = initialize_firebase()
-
-    # Exportar instancias de Firebase
-    if firebase_initialized:
-        try:
+    if not firebase_admin._apps:
+        # Verificar secrets mínimos
+        if all(key in st.secrets for key in ['FIREBASE_PROJECT_ID', 'FIREBASE_PRIVATE_KEY', 'FIREBASE_CLIENT_EMAIL']):
+            
+            cred_dict = {
+                "type": "service_account",
+                "project_id": st.secrets["FIREBASE_PROJECT_ID"],
+                "private_key": st.secrets["FIREBASE_PRIVATE_KEY"].replace('\\n', '\n'),
+                "client_email": st.secrets["FIREBASE_CLIENT_EMAIL"],
+            }
+            
+            cred = credentials.Certificate(cred_dict)
+            firebase_admin.initialize_app(cred)
+            
             db = firestore.client()
             auth_instance = auth
-            st.success("✅ Firebase conectado correctamente")
-        except Exception as e:
-            st.error(f"❌ Error obteniendo instancias de Firebase: {str(e)}")
-            db = None
-            auth_instance = None
-    else:
-        db = None
-        auth_instance = None
-
-except ImportError as e:
-    # FALLBACK: Si firebase-admin no está instalado
-    st.error("❌ firebase-admin no instalado. Ejecuta: pip install firebase-admin")
-    db = None
-    auth_instance = None
+            st.success("✅ Firebase conectado")
+        else:
+            st.info("🔧 Modo demo - Firebase disponible al configurar secrets")
+    
+except ImportError:
+    st.error("📦 Ejecuta: pip install firebase-admin")
 except Exception as e:
-    st.error(f"❌ Error inesperado: {str(e)}")
-    db = None
-    auth_instance = None
+    st.error(f"❌ Error Firebase: {str(e)}")
