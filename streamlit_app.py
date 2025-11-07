@@ -150,7 +150,6 @@ st.markdown(f"""
 
 # ========== SISTEMA DE FEEDBACK MEJORADO ==========
 def guardar_feedback(texto, correo, pagina, idioma):
-    """Guarda feedback en Firebase y trigger de email"""
     if texto.strip():
         try:
             if db:
@@ -163,34 +162,38 @@ def guardar_feedback(texto, correo, pagina, idioma):
                     "user_agent": "Streamlit App",
                 }
                 
-                # Guardar en Firebase
                 db.collection("feedback").add(feedback_data)
-                
-                # Trigger para email
                 trigger_email_notification(feedback_data)
                 
-                # Mensaje de éxito
-                if idioma == "en":
-                    st.success("✅ Thank you! Your feedback is gold 🏆")
-                else:
-                    st.success("✅ ¡Gracias! Tu opinión vale oro 🏆")
-                    
-                # Limpiar el campo
+                # Mensajes de éxito en todos los idiomas
+                success_messages = {
+                    "en": "✅ Thank you! Your feedback is gold 🏆",
+                    "es": "✅ ¡Gracias! Tu opinión vale oro 🏆", 
+                    "ru": "✅ Спасибо! Ваш отзыв - это золото 🏆"
+                }
+                st.success(success_messages.get(idioma, success_messages["en"]))
+                
                 if 'feedback_input' in st.session_state:
                     st.session_state.feedback_input = ""
             else:
-                if idioma == "en":
-                    st.info("📝 Feedback saved locally (Firebase not connected)")
-                else:
-                    st.info("📝 Feedback guardado localmente (Firebase no conectado)")
+                # Mensajes de demo mode
+                demo_messages = {
+                    "en": "📝 Feedback saved locally (Firebase not connected)",
+                    "es": "📝 Feedback guardado localmente (Firebase no conectado)",
+                    "ru": "📝 Отзыв сохранен локально (Firebase не подключен)"
+                }
+                st.info(demo_messages.get(idioma, demo_messages["en"]))
                 
         except Exception as e:
             st.error(f"❌ Error saving feedback: {str(e)}")
     else:
-        if idioma == "en":
-            st.warning("Please write something before sending")
-        else:
-            st.warning("Por favor, escribe algo antes de enviar")
+        # Mensajes de advertencia
+        warning_messages = {
+            "en": "Please write something before sending",
+            "es": "Por favor, escribe algo antes de enviar",
+            "ru": "Пожалуйста, напишите что-нибудь перед отправкой"
+        }
+        st.warning(warning_messages.get(idioma, warning_messages["en"]))
 
 def trigger_email_notification(feedback_data):
     """Placeholder para integración con EmailJS/Zapier"""
@@ -200,30 +203,47 @@ def trigger_email_notification(feedback_data):
 def seccion_feedback():
     """Sistema de feedback con tracking de página"""
     st.sidebar.markdown("---")
-    with st.sidebar.expander("💬 Send Feedback / Enviar Comentarios"):
+    with st.sidebar.expander("💬 Send Feedback / Enviar Comentarios / Отправить отзыв"):
         
-        # Detectar página actual
         pagina_actual = st.session_state.get('opcion', 'Unknown')
+        lang = st.session_state.get("language", "en")
+        
+        # Texto del textarea según idioma
+        placeholder_text = {
+            "en": "What do you like? What can be improved?",
+            "es": "¿Qué te gusta? ¿Qué podemos mejorar?",
+            "ru": "Что вам нравится? Что можно улучшить?"
+        }
+        
+        email_text = {
+            "en": "Your email (optional)",
+            "es": "Tu correo (opcional)", 
+            "ru": "Ваша почта (необязательно)"
+        }
         
         feedback_text = st.text_area(
-            "Your feedback or suggestion / Tu opinión o sugerencia:",
-            placeholder="What do you like? What can be improved? / ¿Qué te gusta? ¿Qué podemos mejorar?",
+            "Your feedback / Tu opinión / Ваш отзыв:",
+            placeholder=placeholder_text.get(lang, "What do you like? What can be improved?"),
             key="feedback_input"
         )
         
         user_email = st.text_input(
-            "Your email (optional) / Tu correo (opcional):",
+            email_text.get(lang, "Your email (optional)"),
             value=st.session_state.user.get('email', '') if 'user' in st.session_state else "",
             key="feedback_email"
         )
         
-        col1, col2 = st.columns([1, 1])
+        # Botones para cada idioma
+        col1, col2, col3 = st.columns(3)
         with col1:
-            if st.button("📤 Send Feedback", key="enviar_feedback_en"):
+            if st.button("📤 English", key="enviar_feedback_en"):
                 guardar_feedback(feedback_text, user_email, pagina_actual, "en")
         with col2:
-            if st.button("📤 Enviar Comentario", key="enviar_feedback_es"):
+            if st.button("📤 Español", key="enviar_feedback_es"):
                 guardar_feedback(feedback_text, user_email, pagina_actual, "es")
+        with col3:
+            if st.button("📤 Русский", key="enviar_feedback_ru"):
+                guardar_feedback(feedback_text, user_email, pagina_actual, "ru")
 
 # ========== AUTH MEJORADA CON MANEJO DE ERRORES ==========
 def get_user_role(uid):
@@ -308,9 +328,16 @@ def auth_ui():
 def sidebar():
     # Selector de idioma (solo mostrar si no hay usuario)
     if 'user' not in st.session_state:
-        st.sidebar.markdown("### 🌐 Language / Idioma")
-        lang = st.sidebar.radio("Choose your language / Elige tu idioma:", ["English", "Español"], horizontal=True)
-        st.session_state.language = "en" if lang == "English" else "es"
+        st.sidebar.markdown("### 🌐 Language / Idioma / Язык")
+        lang = st.sidebar.radio("Choose language / Elegir idioma / Выберите язык:", 
+                               ["English", "Español", "Русский"], 
+                               horizontal=True,
+                               label_visibility="collapsed")
+        # Mapear a códigos
+        lang_map = {"English": "en", "Español": "es", "Русский": "ru"}
+        st.session_state.language = lang_map[lang]
+    
+    # ... el resto del código se mantiene igual
     
     st.sidebar.title("🚀 Trading Yeah")
     
