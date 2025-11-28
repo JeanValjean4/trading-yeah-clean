@@ -433,7 +433,20 @@ def mostrar_guia_onboarding():
         st.info("💡 **Consejo profesional**: Usa la plataforma como lo harías normalmente al tradear. ¡El feedback más valioso viene del uso real!")
 
 # ========== MAIN CORREGIDO ==========
+
+    # Agregar esto al inicio del main() para debug
 def main():
+    # DEBUG: Mostrar estado de Firebase
+    try:
+        from firebase_config import db
+        if db:
+            st.sidebar.success("✅ Firebase Conectado")
+        else:
+            st.sidebar.error("❌ Firebase No Conectado")
+    except:
+        st.sidebar.error("❌ Error Importando Firebase")
+    
+    # ... resto del código
     # Mostrar onboarding si se solicita
     if st.session_state.get('show_onboarding'):
         mostrar_guia_onboarding()
