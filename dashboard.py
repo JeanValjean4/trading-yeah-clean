@@ -265,7 +265,7 @@ def generar_analisis_ia(metricas, df):
         """
         
         respuesta = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "Eres un analista cuantitativo experto en psicología del trading"},
                 {"role": "user", "content": prompt}
