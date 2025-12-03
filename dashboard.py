@@ -261,11 +261,11 @@ def generar_analisis_ia(metricas, df):
         4. Análisis de consistencia y disciplina
         5. Advertencias sobre posibles riesgos
 
-        Sé conciso, profesional y enfocado en insights accionables. Responde en español.
+        Sé conciso, profesional y enfocado en insights accionables. Te puse un límite de 600 tokens. Si superas el límite se cortará la respuesta. Ajusta el número de palabras que usas teniendo eso en cuenta. Responde en inglés. 
         """
         
         respuesta = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "Eres un analista cuantitativo experto en psicología del trading"},
                 {"role": "user", "content": prompt}
