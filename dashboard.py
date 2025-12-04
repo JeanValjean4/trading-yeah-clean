@@ -229,22 +229,87 @@ def crear_grafico_rendimiento_temporal(df):
     return fig
 
 # ========== ANÁLISIS CON IA ==========
-def generar_analisis_ia(metricas, df):
-    """Genera análisis inteligente con IA"""
+# ========== SISTEMA DE CACHÉ INTELIGENTE ==========
+import hashlib
+import json
+from datetime import datetime, timedelta
+
+def generar_hash_analisis(metricas, df):
+    """Genera un hash único según las métricas actuales"""
+    datos_clave = {
+        'total_ops': metricas.get('total_operaciones', 0),
+        'win_rate': metricas.get('win_rate', 0),
+        'profit': metricas.get('profit_total', 0),
+        'drawdown': metricas.get('max_drawdown', 0),
+        'mejor_activo': metricas.get('mejor_activo', ''),
+        'operaciones_count': len(df) if df is not None else 0
+    }
+    hash_str = json.dumps(datos_clave, sort_keys=True)
+    return hashlib.md5(hash_str.encode()).hexdigest()
+
+def guardar_en_cache(user_id, hash_datos, analisis):
+    """Guarda análisis de IA en Firebase"""
+    try:
+        cache_data = {
+            'analisis': analisis,
+            'hash': hash_datos,
+            'timestamp': datetime.now().isoformat(),
+            'expira_en': (datetime.now() + timedelta(days=1)).isoformat()  # Cache por 24 horas
+        }
+        db.collection('users').document(user_id).collection('cache_ia').document('dashboard_analisis').set(cache_data)
+        return True
+    except Exception as e:
+        print(f"Error guardando cache: {e}")
+        return False
+
+def obtener_de_cache(user_id, hash_datos):
+    """Obtiene análisis del cache si no ha expirado y coincide hash"""
+    try:
+        doc = db.collection('users').document(user_id).collection('cache_ia').document('dashboard_analisis').get()
+
+        if doc.exists:
+            cache_data = doc.to_dict()
+
+            if cache_data.get('hash') == hash_datos:
+                expira_en = datetime.fromisoformat(cache_data.get('expira_en', '2000-01-01'))
+                if datetime.now() < expira_en:
+                    return cache_data.get('analisis')
+
+        return None
+    except Exception as e:
+        print(f"Error obteniendo cache: {e}")
+        return None
+
+# ========== ANÁLISIS CON IA + CACHÉ ==========
+def generar_analisis_ia(metricas, df, user_id):
+    """Genera análisis inteligente de la IA con sistema de caché"""
+    
+    # Sin datos suficientes → no analizar
     if not metricas or df is None:
         return "No hay suficientes datos para generar análisis."
-    
+
+    # 1) Generar hash único de las métricas actuales
+    hash_datos = generar_hash_analisis(metricas, df)
+
+    # 2) Revisar primero si ya existe en cache
+    cache_analisis = obtener_de_cache(user_id, hash_datos)
+    if cache_analisis:
+        return f"{cache_analisis}  \n\n*(cached)*"
+
+    # 3) Si NO existe en cache → llamar a OpenAI
     try:
         resumen_metricas = "\n".join([f"{k}: {v}" for k, v in metricas.items()])
-        
+
         emociones_analysis = ""
         emociones_campos = ['emocion_antes', 'emocion_durante', 'emocion_despues']
         for campo in emociones_campos:
             if campo in df.columns:
                 emoc_stats = df.groupby(campo)['resultado_num'].mean() * 100
-                emociones_analysis += f"\nEmociones {campo}:\n" + "\n".join([f"  {emoc}: {rate:.1f}% win rate" 
-                                                                           for emoc, rate in emoc_stats.items()])
-        
+                if not emoc_stats.empty:
+                    emociones_analysis += f"\nEmociones {campo}:\n" + "\n".join(
+                        [f"  {emoc}: {rate:.1f}% win rate" for emoc, rate in emoc_stats.items()]
+                    )
+
         prompt = f"""
         Como analista experto en trading, analiza estas métricas y proporciona insights accionables:
 
@@ -261,21 +326,28 @@ def generar_analisis_ia(metricas, df):
         4. Análisis de consistencia y disciplina
         5. Advertencias sobre posibles riesgos
 
-        Sé conciso, profesional y enfocado en insights accionables. Te puse un límite de 600 tokens. Si superas el límite se cortará la respuesta. Ajusta el número de palabras que usas teniendo eso en cuenta. Responde en inglés. 
+        Sé conciso, profesional y enfocado en insights accionables. Tienes un límite de 600 tokens máximo. 
+        Si superas el límite la respuesta se cortará. Ajusta la longitud de tu respuesta para que quepa completo 
+        dentro del límite. Responde en inglés.
         """
-        
+
         respuesta = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "Eres un analista cuantitativo experto en psicología del trading"},
+                {"role": "system", "content": "Eres un analista cuantitativo experto en psicología del trading. Responde en español siempre."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
             max_tokens=600
         )
-        
-        return respuesta.choices[0].message.content
-    
+
+        analisis = respuesta.choices[0].message.content
+
+        # 4) Guardarlo en caché para futuras visitas
+        guardar_en_cache(user_id, hash_datos, analisis)
+
+        return analisis
+
     except Exception as e:
         return f"Error en análisis IA: {str(e)}"
 
@@ -366,7 +438,7 @@ def mostrar_dashboard_personalizado():
     st.header("🧠 Análisis Inteligente con IA")
     
     with st.expander("🔍 Insights Detallados", expanded=True):
-        analisis_ia = generar_analisis_ia(metricas, df)
+        analisis_ia = generar_analisis_ia(metricas, df, user_id)
         st.markdown(f"""
         <div style='background-color: #2E2E2E; padding: 20px; border-radius: 10px; border-left: 4px solid #C9A34E;'>
         {analisis_ia}
