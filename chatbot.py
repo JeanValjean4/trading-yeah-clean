@@ -94,106 +94,343 @@ RECORDATORIOS_TEMPORALES = {
 }
 
 # ========== DETECCIÓN EMOCIONAL MEJORADA ==========
-def analizar_estado_emocional(texto):
-    """Analiza el estado emocional del texto usando IA - Versión mejorada"""
+# ========== CONFIGURACIÓN OPENAI ==========
+def get_openai_client():
+    """Configuración segura de OpenAI"""
     try:
-        prompt = f"""
-        Como psicólogo especializado en traders, analiza este mensaje y responde SOLO con JSON válido:
-        {{
-            "emocion_principal": "ansiedad|confianza|frustracion|euforia|calma|neutral|miedo|culpa|impulsividad",
-            "intensidad": 1-10,
-            "necesita_ayuda_urgente": true/false,
-            "palabras_clave": ["lista", "de", "palabras"],
-            "tipo_problema": "riesgo|disciplina|perdida|ganancia|overtrading|ansiedad"
-        }}
-
-        Texto del trader: "{texto}"
-
-        Sé preciso y analítico. El trader necesita ayuda real.
-        """
-
-        respuesta = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "Eres un analista emocional experto en trading. Responde solo con JSON válido y preciso."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.2,  # Menor temperatura para más precisión
-            max_tokens=200
-        )
+        api_key = st.secrets.get("OPENAI_API_KEY")
+        if not api_key:
+            st.error("🔑 OPENAI_API_KEY no configurada en Secrets")
+            return None
         
-        return json.loads(respuesta["choices"][0]["message"]["content"])
-    except Exception as e:
+        openai.api_key = api_key
+        return openai
+    except:
+        return None
+
+client = get_openai_client()
+
+# ========== SISTEMA DE CACHÉ PARA CHATBOT ==========
+def generar_hash_conversacion(user_input, historial_reciente):
+    """Genera hash único para la conversación actual"""
+    datos_conversacion = {
+        'user_input': user_input[:100],  # Solo primeros 100 caracteres
+        'historial_hash': hashlib.md5(json.dumps(historial_reciente[-3:]).encode()).hexdigest() if historial_reciente else "empty"
+    }
+    return hashlib.md5(json.dumps(datos_conversacion, sort_keys=True).encode()).hexdigest()
+
+def guardar_respuesta_cache(user_id, hash_conversacion, respuesta):
+    """Guarda respuesta en caché"""
+    try:
+        cache_data = {
+            'respuesta': respuesta,
+            'hash': hash_conversacion,
+            'timestamp': datetime.now().isoformat(),
+            'expira_en': (datetime.now() + timedelta(hours=6)).isoformat()  # Cache por 6 horas
+        }
+        db.collection('users').document(user_id).collection('chatbot_cache').document(hash_conversacion[:20]).set(cache_data)
+        return True
+    except:
+        return False
+
+def obtener_respuesta_cache(user_id, hash_conversacion):
+    """Obtiene respuesta del caché"""
+    try:
+        doc = db.collection('users').document(user_id).collection('chatbot_cache').document(hash_conversacion[:20]).get()
+        
+        if doc.exists:
+            cache_data = doc.to_dict()
+            if cache_data.get('hash') == hash_conversacion:
+                expira_en = datetime.fromisoformat(cache_data.get('expira_en', '2000-01-01'))
+                if datetime.now() < expira_en:
+                    return cache_data.get('respuesta')
+        return None
+    except:
+        return None
+
+# ========== DETECCIÓN EMOCIONAL MEJORADA ==========
+def analizar_estado_emocional(texto):
+    """Analiza el estado emocional del texto usando IA"""
+    if not client:
         return {
             "emocion_principal": "neutral",
             "intensidad": 5,
             "necesita_ayuda_urgente": False,
-            "palabras_clave": [],
+            "tipo_problema": "general"
+        }
+    
+    try:
+        prompt = f"""
+        Analiza el estado emocional de este mensaje de un trader y responde SOLO con JSON válido:
+        
+        {{
+            "emocion_principal": "ansiedad|confianza|frustracion|euforia|calma|neutral|miedo|culpa|impulsividad|duda",
+            "intensidad": 1-10,
+            "necesita_ayuda_urgente": true/false,
+            "tipo_problema": "fomo|revenge_trading|overconfidence|analysis_paralysis|risk_management|entry_timing|exit_timing"
+        }}
+        
+        Texto: "{texto}"
+        """
+        
+        respuesta = client.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Eres un detector emocional para traders. Responde solo con JSON válido."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,
+            max_tokens=150
+        )
+        
+        return json.loads(respuesta["choices"][0]["message"]["content"])
+    except:
+        return {
+            "emocion_principal": "neutral",
+            "intensidad": 5,
+            "necesita_ayuda_urgente": False,
             "tipo_problema": "general"
         }
 
-# ========== RESPUESTAS INTELIGENTES MEJORADAS ==========
-def generar_respuesta_emocional(user_input, estado_emocional, historial, perfil_emocional):
-    """Genera una respuesta psicológica apropiada - Versión mejorada"""
+# ========== GENERADOR DE RESPUESTAS INTELIGENTES ==========
+def generar_respuesta_ia(user_input, estado_emocional, historial, user_id):
+    """Genera respuesta psicológica usando IA con caché"""
     
-    # Actualizar perfil emocional
-    perfil_emocional['estado_actual'] = estado_emocional['emocion_principal']
-    perfil_emocional['ultima_actualizacion'] = datetime.now().isoformat()
+    # 1. Generar hash de la conversación
+    hash_conversacion = generar_hash_conversacion(user_input, historial)
     
-    # Construir contexto detallado para la IA
-    contexto = f"""
-    Eres Dr. Trading, un coach psicológico especializado EXCLUSIVAMENTE en traders profesionales. 
+    # 2. Verificar caché primero
+    cached_response = obtener_respuesta_cache(user_id, hash_conversacion)
+    if cached_response:
+        return cached_response + "\n\n*(respuesta cacheada)*"
     
-    CONTEXTO ACTUAL:
-    - Estado emocional: {estado_emocional['emocion_principal']} (Intensidad: {estado_emocional['intensidad']}/10)
-    - Tipo de problema: {estado_emocional.get('tipo_problema', 'general')}
-    - Palabras clave detectadas: {', '.join(estado_emocional.get('palabras_clave', []))}
+    # 3. Si no hay caché, generar nueva respuesta
+    if not client:
+        return generar_respuesta_fallback(estado_emocional)
     
-    HISTORIAL RECIENTE:
-    {json.dumps(historial[-3:] if historial else 'Sin historial reciente', ensure_ascii=False)}
-    
-    RESPONDE CON:
-    - Análisis psicológico PROFESIONAL del problema
-    - 2-3 acciones CONCRETAS y prácticas para resolverlo
-    - Un framework específico para manejar esta situación
-    - Referencia a técnicas de psicología trading comprobadas
-    - Máximo 2 párrafos, extremadamente conciso pero útil
-    - Lenguaje profesional pero accesible
-    - Incluye un mantra relevante si aplica
-    
-    EJEMPLO DE RESPUESTA PROFESIONAL:
-    "Entiendo tu frustración por la operación perdedora. Esto es classic revenge trading. 
-    Paso 1: Detente inmediatamente y cierra todas las plataformas. 
-    Paso 2: Revisa tu plan de trading y identifica QUÉ regla rompiste. 
-    Paso 3: Mañana solo operarás con tamaño reducido al 50%. 
-    Recuerda: 'Las pérdidas son tuition fees, no failures'."
-    
-    El usuario dijo: "{user_input}"
-    """
-
     try:
-        respuesta = openai.ChatCompletion.create(
+        # Construir contexto de historial reciente
+        contexto_historial = ""
+        if historial and len(historial) > 0:
+            ultimos_mensajes = historial[-4:]  # Últimos 4 intercambios
+            for msg in ultimos_mensajes:
+                rol = "Trader" if msg['tipo'] == 'usuario' else "Coach"
+                contexto_historial += f"{rol}: {msg['mensaje'][:100]}\n"
+        
+        # PROMPT MEJORADO - COMO UN COACH REAL
+        prompt = f"""
+        Eres Dr. Trading, un coach psicológico EXPERTO en trading con 20 años de experiencia.
+        
+        CONTEXTO DEL TRADER:
+        - Estado emocional: {estado_emocional['emocion_principal']} (intensidad: {estado_emocional['intensidad']}/10)
+        - Tipo de problema: {estado_emocional.get('tipo_problema', 'general')}
+        
+        HISTORIAL RECIENTE:
+        {contexto_historial if contexto_historial else 'Sin historial reciente'}
+        
+        MENSAJE ACTUAL DEL TRADER:
+        "{user_input}"
+        
+        INSTRUCCIONES PARA RESPONDER:
+        1. Sé EMPÁTICO pero PROFESIONAL
+        2. Analiza el PROBLEMA REAL detrás del mensaje
+        3. Da 1-2 RECOMENDACIONES CONCRETAS y ACCIONABLES
+        4. Incluye una PERSPECTIVA psicológica relevante
+        5. Menciona 1 ERROR COMÚN que debería evitar
+        6. Termina con 1 PREGUNTA que lo haga reflexionar
+        
+        LIMITACIONES:
+        - Máximo 250 palabras
+        - Español claro y directo
+        - Sin jerga excesiva
+        - Enfocado en SOLUCIONES prácticas
+        
+        RESPUESTA (en formato conversacional natural):
+        """
+        
+        respuesta = client.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": contexto},
-                {"role": "user", "content": user_input}
+                {"role": "system", "content": "Eres el mejor coach psicológico de trading del mundo. Das consejos prácticos, empáticos y transformadores."},
+                {"role": "user", "content": prompt}
             ],
-            temperature=0.8,
-            max_tokens=400
+            temperature=0.7,
+            max_tokens=350  # Suficiente para respuesta útil pero no excesiva
         )
-        return respuesta["choices"][0]["message"]["content"]
+        
+        respuesta_texto = respuesta["choices"][0]["message"]["content"]
+        
+        # 4. Guardar en caché
+        guardar_respuesta_cache(user_id, hash_conversacion, respuesta_texto)
+        
+        return respuesta_texto
+        
     except Exception as e:
-        # Respuesta de fallback MUCHO más útil
-        return f"""🔍 **Análisis de tu situación:** Detecto {estado_emocional['emocion_principal']} de intensidad {estado_emocional['intensidad']}/10.
+        return generar_respuesta_fallback(estado_emocional)
 
-🚀 **Acciones inmediatas:**
-1. Detén toda operación por hoy
-2. Revisa tu journaling de las últimas 3 operaciones
-3. Programa una revisión de tu plan de trading
+def generar_respuesta_fallback(estado_emocional):
+    """Respuesta de fallback mejorada"""
+    emocion = estado_emocional['emocion_principal']
+    intensidad = estado_emocional['intensidad']
+    
+    respuestas_fallback = {
+        "ansiedad": f"""Entiendo esa sensación de ansiedad (nivel {intensidad}/10). Es normal antes de una operación importante.
 
-💡 **Recordatorio clave:** '{random.choice(MANTRAS_PREDETERMINADOS)}'
+**Recomendación:** Antes de entrar, haz este ejercicio:
+1. Respira profundamente 3 veces (4-7-8)
+2. Pregúntate: "¿Esta operación está en mi plan?"
+3. Si la respuesta es NO, espera. El mercado siempre tendrá otra oportunidad.
 
-¿Qué regla específica de tu plan crees que se vio comprometida?"""
+**Pregunta para reflexionar:** ¿Qué es lo peor que puede pasar si NO tomas esta operación ahora?""",
+        
+        "frustracion": f"""La frustración por operaciones perdidas es una de las mayores pruebas psicológicas.
+
+**Acción inmediata:** 
+1. Revisa tu ÚLTIMA operación GANADORA
+2. Anota 3 cosas que hiciste bien en esa operación
+3. Compara con la operación que te frustró
+
+**Recordatorio:** Las pérdidas son el precio de la educación en trading, no fracasos.
+
+**Pregunta:** ¿Qué puedes aprender específicamente de esta última operación?""",
+        
+        "fomo": f"""¡Identifico FOMO (Fear Of Missing Out)! Esto es peligroso.
+
+**Regla de emergencia:** Si sientes FOMO, reduce el tamaño a la MITAD automáticamente.
+
+**Perspectiva:** Las mejores operaciones no se sienten emocionantes al principio. Si parece "demasiado buena", probablemente lo sea.
+
+**Pregunta:** ¿Realmente esta oportunidad se alinea con tu plan o solo con tu emoción?""",
+        
+        "duda": f"""La duda es una señal de INTELIGENCIA en trading, no de debilidad.
+
+**Estrategia:** Cuando dudes, escala tu entrada:
+- Entra con 25% del tamaño normal
+- Si funciona, agrega otro 25%
+- Si no, sal con pérdida mínima
+
+**Verdad dura:** Es mejor perderse una operación que tomar una mala.
+
+**Pregunta:** ¿Qué información adicional necesitas para reducir tu duda al 50%?"""
+    }
+    
+    return respuestas_fallback.get(emocion, 
+        f"""Veo que estás en un estado {emocion} (intensidad {intensidad}/10).
+
+**Acción recomendada:** Toma 5 minutos para escribir:
+1. ¿Qué específicamente te preocupa?
+2. ¿Cuál es el escenario REALISTA (no el catastrófico)?
+3. ¿Qué haría un trader experimentado en esta situación?
+
+**Pregunta clave:** Si un amigo te contara esta misma situación, ¿qué le aconsejarías?""")
+
+# ========== FUNCIONES DE PERSISTENCIA (MANTENIDAS) ==========
+def cargar_historial_chat(user_id):
+    """Carga el historial de conversación del usuario"""
+    try:
+        doc_ref = db.collection('users').document(user_id).collection('chatbot').document('historial')
+        doc = doc_ref.get()
+        if doc.exists:
+            return doc.to_dict().get('conversaciones', [])
+        return []
+    except:
+        return []
+
+def guardar_historial_chat(user_id, conversaciones):
+    """Guarda el historial de conversación"""
+    try:
+        doc_ref = db.collection('users').document(user_id).collection('chatbot').document('historial')
+        doc_ref.set({
+            'conversaciones': conversaciones[-30:],  # Últimas 30 interacciones
+            'ultima_actualizacion': datetime.now().isoformat()
+        })
+    except:
+        pass
+
+# ... [MANTRAS, RECORDATORIOS y demás funciones se mantienen IGUALES] ...
+# Solo copia todo lo que está después de generar_respuesta_emocional() en tu código actual
+# desde "MANTRAS_PREDETERMINADOS = [" hasta el final
+
+# ========== INTERFAZ PRINCIPAL ACTUALIZADA ==========
+def mostrar_chatbot_trading():
+    st.title("🧠 Apoyo Psicológico en Tiempo Real")
+    
+    # Aplicar estilos CSS (mantener igual)
+    st.markdown("""
+    <style>
+    .stMetric {
+        background-color: #2E2E2E;
+        padding: 15px;
+        border-radius: 10px;
+        border-left: 4px solid #C9A34E;
+    }
+    .stMetric label {
+        color: #FFFFFF !important;
+        font-weight: bold;
+    }
+    .stMetric div {
+        color: #C9A34E !important;
+        font-size: 16px !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    if 'user' not in st.session_state:
+        st.warning("🔒 Debes iniciar sesión para acceder al apoyo psicológico")
+        return
+    
+    user_id = st.session_state.user['uid']
+    historial = cargar_historial_chat(user_id)
+    
+    # Mostrar historial
+    for msg in historial[-10:]:
+        with st.chat_message("user" if msg['tipo'] == 'usuario' else "assistant"):
+            st.write(msg['mensaje'])
+            if msg.get('timestamp'):
+                st.caption(f"⌚ {msg['timestamp']}")
+    
+    # Input de chat
+    user_input = st.chat_input("¿Cómo te sientes o en qué necesitas apoyo?")
+    
+    if user_input:
+        # Analizar emoción
+        with st.spinner("🔍 Analizando tu estado emocional..."):
+            estado_emocional = analizar_estado_emocional(user_input)
+        
+        # Guardar mensaje usuario
+        mensaje_usuario = {
+            'tipo': 'usuario',
+            'mensaje': user_input,
+            'timestamp': datetime.now().strftime("%H:%M"),
+            'emocion': estado_emocional['emocion_principal']
+        }
+        historial.append(mensaje_usuario)
+        
+        # Mostrar mensaje usuario
+        with st.chat_message("user"):
+            st.write(user_input)
+            st.caption(f"⌚ {mensaje_usuario['timestamp']} • 🎭 {estado_emocional['emocion_principal'].capitalize()}")
+        
+        # Generar y mostrar respuesta IA
+        with st.spinner("💭 Elaborando respuesta personalizada..."):
+            respuesta = generar_respuesta_ia(user_input, estado_emocional, historial, user_id)
+        
+        mensaje_asistente = {
+            'tipo': 'asistente',
+            'mensaje': respuesta,
+            'timestamp': datetime.now().strftime("%H:%M"),
+            'emocion_detectada': estado_emocional['emocion_principal']
+        }
+        historial.append(mensaje_asistente)
+        
+        with st.chat_message("assistant"):
+            st.write(respuesta)
+            st.caption(f"⌚ {mensaje_asistente['timestamp']} • 🎯 Basado en análisis psicológico")
+        
+        # Guardar historial
+        guardar_historial_chat(user_id, historial)
+        st.rerun()
+
 
 # ========== SISTEMA DE RECORDATORIOS MEJORADO ==========
 def obtener_recordatorio_contextual(user_id):
