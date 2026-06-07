@@ -45,14 +45,23 @@ def procesar_datos_operaciones(operaciones):
         df = df.sort_values('fecha')
     
     # Calcular métricas de rendimiento
-    if all(col in df.columns for col in ['resultado', 'precio_entrada', 'stop_loss', 'take_profit']):
-        # Calcular P&L simulado (si no hay campo real)
+    # Usar P&L real si existe, si no, simular
+    if 'pnl_real' in df.columns:
+        # Usar P&L real del usuario
+        df['profit_loss'] = df['pnl_real'].astype(float)
         df['resultado_num'] = df['resultado'].apply(lambda x: 1 if x == 'Ganadora' else -1)
-        df['risk_reward_ratio'] = (df['take_profit'] - df['precio_entrada']) / (df['precio_entrada'] - df['stop_loss'])
-        
-        # Calcular equity curve (simulada)
-        df['profit_loss'] = df['resultado_num'] * df['risk_reward_ratio'] * 100  # Simulación
         df['equity_curve'] = df['profit_loss'].cumsum()
+        
+        # Calcular risk/reward si es posible
+        if all(col in df.columns for col in ['precio_entrada', 'stop_loss', 'take_profit']):
+            df['risk_reward_ratio'] = (df['take_profit'] - df['precio_entrada']) / (df['precio_entrada'] - df['stop_loss'])
+    else:
+        # Fallback a simulación (para compatibilidad con datos viejos)
+        if all(col in df.columns for col in ['resultado', 'precio_entrada', 'stop_loss', 'take_profit']):
+            df['resultado_num'] = df['resultado'].apply(lambda x: 1 if x == 'Ganadora' else -1)
+            df['risk_reward_ratio'] = (df['take_profit'] - df['precio_entrada']) / (df['precio_entrada'] - df['stop_loss'])
+            df['profit_loss'] = df['resultado_num'] * df['risk_reward_ratio'] * 100
+            df['equity_curve'] = df['profit_loss'].cumsum()
     
     return df
 
@@ -82,6 +91,15 @@ def calcular_metricas_avanzadas(df):
     metricas['operaciones_perdedoras'] = perdedoras
     metricas['win_rate'] = round(win_rate, 2)
 
+    # =====================
+    # MÉTRICAS DE P&L REAL
+    # =====================
+    if 'profit_loss' in df.columns and not df['profit_loss'].isnull().all():
+        metricas['profit_total'] = round(df['profit_loss'].sum(), 2)
+        metricas['profit_promedio'] = round(df['profit_loss'].mean(), 2) if total_ops > 0 else 0
+        metricas['ganancia_maxima'] = round(df['profit_loss'].max(), 2) if total_ops > 0 else 0  # ← NUEVO
+        metricas['perdida_maxima'] = round(df['profit_loss'].min(), 2) if total_ops > 0 else 0    # ← NUEVO
+    
     # =====================
     # MÉTRICAS AVANZADAS
     # =====================
@@ -401,10 +419,10 @@ def mostrar_dashboard_personalizado():
         profit_total = metricas.get('profit_total', 0)
         st.metric("Profit Total", f"${profit_total:,.2f}", 
                  delta_color="normal" if profit_total >= 0 else "inverse")
-        st.metric("Profit Promedio", f"${metricas.get('profit_promedio', 0):,.2f}")
+        st.metric("Ganancia Máxima", f"${metricas.get('ganancia_maxima', 0):,.2f}")  # ← NUEVO
     
     with col4:
-        st.metric("Max Drawdown", f"${metricas.get('max_drawdown', 0):,.2f}",
+        st.metric("Perdida Máxima", f"${metricas.get('perdida_maxima', 0):,.2f}",
                  delta_color="inverse")
         st.metric("Mejor Activo", metricas.get('mejor_activo', 'N/A'))
     
