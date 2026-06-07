@@ -201,16 +201,18 @@ def formulario_operacion_mejorado(operacion=None):
         timeframe = col2.selectbox("Timeframe", ["1m", "5m", "15m", "30m", "1H", "4H", "1D"], 
                                  index=["1m", "5m", "15m", "30m", "1H", "4H", "1D"].index(valores_default["timeframe"]))
         
+        
         col3, col4, col5 = st.columns(3)
         precio_entrada = col3.number_input("Precio Entrada", value=valores_default["precio_entrada"], format="%.5f")
         sl = col4.number_input("Stop Loss", value=valores_default["stop_loss"], format="%.5f")
         tp = col5.number_input("Take Profit", value=valores_default["take_profit"], format="%.5f")
         
-        col6, col7 = st.columns(2)
+        col6, col7, col8 = st.columns(3)
         resultado = col6.selectbox("Resultado", ["Ganadora", "Perdedora"], 
                                  index=["Ganadora", "Perdedora"].index(valores_default["resultado"]))
         tipo = col7.selectbox("Dirección", ["Largo", "Corto"], 
-                            index=["Largo", "Corto"].index(valores_default["tipo"]))  # 👈 ahora siempre será válido
+                            index=["Largo", "Corto"].index(valores_default["tipo"]))
+        pnl_real = col8.number_input("Ganancia/Pérdida Real ($)", value=float(valores_default.get("pnl_real", 0.0)), format="%.2f")
         
         # Campos emocionales nuevos
         st.subheader("🧠 Estado Emocional")
@@ -248,6 +250,7 @@ def formulario_operacion_mejorado(operacion=None):
                 "take_profit": tp,
                 "resultado": resultado,
                 "tipo": tipo,
+                "pnl_real": pnl_real,  # ← LÍNEA NUEVA
                 "resumen": resumen,
                 "leccion_aprendida": leccion_aprendida,
                 "emocion_antes": emocion_antes,
