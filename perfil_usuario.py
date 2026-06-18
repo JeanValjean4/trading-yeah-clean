@@ -1,4 +1,4 @@
-# perfil_usuario.py - Configuración del perfil de trading
+# perfil_usuario.py - Configuración del perfil de trading con Firebase
 import streamlit as st
 from datetime import datetime
 from firebase_config import db
@@ -9,6 +9,7 @@ def cargar_perfil_usuario(user_id):
         doc = db.collection('users').document(user_id).collection('perfil').document('trading_config').get()
         if doc.exists:
             return doc.to_dict()
+        # Valores por defecto si no existe
         return {
             'capital_inicial': 10000.0,
             'riesgo_por_operacion': 1.0,
@@ -17,7 +18,8 @@ def cargar_perfil_usuario(user_id):
             'objetivo_mensual': 5.0,
             'drawdown_maximo': 10.0
         }
-    except:
+    except Exception as e:
+        st.error(f"Error cargando perfil: {e}")
         return {
             'capital_inicial': 10000.0,
             'riesgo_por_operacion': 1.0,
@@ -33,7 +35,8 @@ def guardar_perfil_usuario(user_id, perfil):
         perfil['ultima_actualizacion'] = datetime.now().isoformat()
         db.collection('users').document(user_id).collection('perfil').document('trading_config').set(perfil)
         return True
-    except:
+    except Exception as e:
+        st.error(f"Error guardando perfil: {e}")
         return False
 
 def mostrar_perfil_usuario():
