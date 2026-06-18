@@ -1,4 +1,4 @@
-# streamlit_app.py - VERSIÓN COMPLETA CON FEEDBACK + IDIOMAS
+# streamlit_app.py - VERSIÓN COMPLETA CON FEEDBACK + IDIOMAS + PERFIL
 import streamlit as st
 from datetime import datetime
 
@@ -18,6 +18,7 @@ try:
     from chatbot import mostrar_chatbot_trading
     from estrategia_maestra import mostrar_estrategia_maestra
     from analisis_mercado import mostrar_proximamente
+    from perfil_usuario import mostrar_perfil_usuario  # NUEVA IMPORTACIÓN
     from translations import get_translation
 except ImportError as e:
     st.error(f"Error importing modules: {e}")
@@ -337,8 +338,6 @@ def sidebar():
         lang_map = {"English": "en", "Español": "es", "Русский": "ru"}
         st.session_state.language = lang_map[lang]
     
-    # ... el resto del código se mantiene igual
-    
     st.sidebar.title("🚀 Trading Yeah")
     
     if 'user' not in st.session_state:
@@ -353,8 +352,13 @@ def sidebar():
     if db is None:
         st.sidebar.warning(get_translation(lang, "sidebar_demo"))
 
-    # Menú con traducciones
+    # Menú con traducciones - AHORA INCLUYE "Mi Perfil"
     opciones = get_translation(lang, "menu_items")
+    # Añadimos "Mi Perfil" al final de la lista (si no está ya en traducciones, lo ponemos manual)
+    if "Mi Perfil" not in opciones:
+        # Si el idioma es español, añadimos "Mi Perfil"; si es inglés, "My Profile"; ruso "Мой профиль"
+        perfil_text = "Mi Perfil" if lang == "es" else "My Profile" if lang == "en" else "Мой профиль"
+        opciones = list(opciones) + [perfil_text]  # Convertimos a lista si es tupla
     
     # Guardar opción actual para tracking
     opcion_seleccionada = st.sidebar.radio(get_translation(lang, "sidebar_menu"), opciones)
@@ -433,8 +437,6 @@ def mostrar_guia_onboarding():
         st.info("💡 **Consejo profesional**: Usa la plataforma como lo harías normalmente al tradear. ¡El feedback más valioso viene del uso real!")
 
 # ========== MAIN CORREGIDO ==========
-
-    # Agregar esto al inicio del main() para debug
 def main():
     # DEBUG: Mostrar estado de Firebase
     try:
@@ -446,7 +448,6 @@ def main():
     except:
         st.sidebar.error("❌ Error Importando Firebase")
     
-    # ... resto del código
     # Mostrar onboarding si se solicita
     if st.session_state.get('show_onboarding'):
         mostrar_guia_onboarding()
@@ -468,7 +469,10 @@ def main():
         "Journaling Inteligente": "Journaling Inteligente",
         "Apoyo Psicológico": "Apoyo Psicológico",
         "Planificador de Trading": "Planificador de Trading",
-        "🚀 Próximamente": "🚀 Próximamente"
+        "🚀 Próximamente": "🚀 Próximamente",
+        "Mi Perfil": "Mi Perfil",      # NUEVO
+        "My Profile": "Mi Perfil",     # NUEVO
+        "Мой профиль": "Mi Perfil"     # NUEVO
     }
     
     opcion_base = opciones_base.get(opcion, opcion)
@@ -481,6 +485,8 @@ def main():
         mostrar_chatbot_trading()
     elif opcion_base == "Planificador de Trading":
         mostrar_estrategia_maestra()
+    elif opcion_base == "Mi Perfil":          # NUEVO
+        mostrar_perfil_usuario()
     elif opcion_base == "🚀 Próximamente":
         mostrar_proximamente()
 
